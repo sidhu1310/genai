@@ -1,0 +1,8 @@
+flask
+flask-cors
+torch
+transformers
+librosa
+werkzeug
+sqlite3
+torch
