@@ -142,7 +142,8 @@ This project is open-source under the MIT License.
 ---
 
 ## Contributors
-- **Your Name** - Developer
+- **K.Sidhartha Rao** - Developer
+- **S.Srinija** - Developer
 
 For suggestions or issues, feel free to raise a GitHub issue!
 
