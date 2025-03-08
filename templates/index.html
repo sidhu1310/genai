@@ -33,9 +33,22 @@
             border-radius: 4px;
             cursor: pointer;
             font-size: 16px;
+            margin-right: 10px;
         }
         .btn:hover {
             background-color: #45a049;
+        }
+        .btn-record {
+            background-color: #f44336;
+        }
+        .btn-record:hover {
+            background-color: #d32f2f;
+        }
+        .btn-stop {
+            background-color: #555;
+        }
+        .btn-stop:hover {
+            background-color: #333;
         }
         #result {
             margin-top: 20px;
@@ -63,18 +76,91 @@
         .transcription-text {
             margin-top: 5px;
         }
+        .recording-controls {
+            display: flex;
+            align-items: center;
+            margin-top: 15px;
+        }
+        .recording-indicator {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background-color: #ccc;
+            margin-left: 15px;
+            display: none;
+        }
+        .recording {
+            background-color: #f44336;
+            animation: pulse 1.5s infinite;
+        }
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+        .or-divider {
+            text-align: center;
+            margin: 20px 0;
+            font-weight: bold;
+        }
+        .input-method-tabs {
+            display: flex;
+            border-bottom: 1px solid #ddd;
+            margin-bottom: 20px;
+        }
+        .tab {
+            padding: 10px 15px;
+            cursor: pointer;
+            border: 1px solid transparent;
+        }
+        .tab.active {
+            border: 1px solid #ddd;
+            border-bottom-color: white;
+            border-radius: 5px 5px 0 0;
+            margin-bottom: -1px;
+            background-color: white;
+        }
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
+        }
+        #recordingTime {
+            margin-left: 15px;
+            font-family: monospace;
+        }
     </style>
 </head>
 <body>
     <h1>Audio Transcription</h1>
     
     <div class="container">
-        <div class="form-group">
-            <label for="audioFile">Upload Audio File:</label>
-            <input type="file" id="audioFile" accept="audio/*">
+        <div class="input-method-tabs">
+            <div class="tab active" onclick="switchTab('upload')">Upload Audio</div>
+            <div class="tab" onclick="switchTab('record')">Record Audio</div>
         </div>
         
-        <div class="form-group">
+        <div id="uploadTab" class="tab-content active">
+            <div class="form-group">
+                <label for="audioFile">Upload Audio File:</label>
+                <input type="file" id="audioFile" accept="audio/*">
+            </div>
+        </div>
+        
+        <div id="recordTab" class="tab-content">
+            <div class="recording-controls">
+                <button class="btn btn-record" id="recordButton">Start Recording</button>
+                <button class="btn btn-stop" id="stopButton" style="display: none;">Stop Recording</button>
+                <div class="recording-indicator" id="recordingIndicator"></div>
+                <span id="recordingTime">00:00</span>
+            </div>
+            <div id="audioPlayback" style="margin-top: 15px; display: none;">
+                <audio id="recordedAudio" controls></audio>
+            </div>
+        </div>
+        
+        <div class="form-group" style="margin-top: 20px;">
             <label for="transcriptionName">Transcription Name (optional):</label>
             <input type="text" id="transcriptionName" placeholder="Enter a name for this transcription">
         </div>
@@ -102,6 +188,14 @@
         let transcriptions = JSON.parse(localStorage.getItem('transcriptions')) || [];
         let currentTranscription = null;
         
+        // Recording variables
+        let mediaRecorder;
+        let audioChunks = [];
+        let recordedBlob = null;
+        let recordingStartTime = 0;
+        let recordingTimer = null;
+        let activeTab = 'upload';
+        
         // Display existing transcriptions
         function displayHistory() {
             const historyContainer = document.getElementById('historyContainer');
@@ -127,18 +221,100 @@
             });
         }
         
+        // Switch between tabs
+        function switchTab(tab) {
+            activeTab = tab;
+            document.querySelectorAll('.tab').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+            
+            document.querySelector(`.tab:nth-child(${tab === 'upload' ? 1 : 2})`).classList.add('active');
+            document.getElementById(`${tab}Tab`).classList.add('active');
+        }
+        
+        // Initialize recording functionality
+        function initRecording() {
+            const recordButton = document.getElementById('recordButton');
+            const stopButton = document.getElementById('stopButton');
+            const recordingIndicator = document.getElementById('recordingIndicator');
+            const recordingTime = document.getElementById('recordingTime');
+            
+            recordButton.addEventListener('click', async () => {
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    
+                    mediaRecorder = new MediaRecorder(stream);
+                    audioChunks = [];
+                    
+                    mediaRecorder.ondataavailable = event => {
+                        audioChunks.push(event.data);
+                    };
+                    
+                    mediaRecorder.onstop = () => {
+                        recordedBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                        const audioURL = URL.createObjectURL(recordedBlob);
+                        const audioPlayback = document.getElementById('audioPlayback');
+                        const recordedAudio = document.getElementById('recordedAudio');
+                        
+                        recordedAudio.src = audioURL;
+                        audioPlayback.style.display = 'block';
+                        
+                        recordButton.style.display = 'inline-block';
+                        stopButton.style.display = 'none';
+                        recordingIndicator.classList.remove('recording');
+                        recordingIndicator.style.display = 'none';
+                        
+                        clearInterval(recordingTimer);
+                    };
+                    
+                    mediaRecorder.start();
+                    recordButton.style.display = 'none';
+                    stopButton.style.display = 'inline-block';
+                    recordingIndicator.style.display = 'block';
+                    recordingIndicator.classList.add('recording');
+                    
+                    // Start recording timer
+                    recordingStartTime = Date.now();
+                    recordingTimer = setInterval(() => {
+                        const elapsedSeconds = Math.floor((Date.now() - recordingStartTime) / 1000);
+                        const minutes = Math.floor(elapsedSeconds / 60).toString().padStart(2, '0');
+                        const seconds = (elapsedSeconds % 60).toString().padStart(2, '0');
+                        recordingTime.textContent = `${minutes}:${seconds}`;
+                    }, 1000);
+                    
+                } catch (err) {
+                    alert('Error accessing microphone: ' + err.message);
+                }
+            });
+            
+            stopButton.addEventListener('click', () => {
+                if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+                    mediaRecorder.stop();
+                    mediaRecorder.stream.getTracks().forEach(track => track.stop());
+                }
+            });
+        }
+        
         // Call API to transcribe audio
         function transcribeAudio() {
-            const fileInput = document.getElementById('audioFile');
             const loadingIndicator = document.getElementById('loading');
             const resultDiv = document.getElementById('result');
+            let file = null;
             
-            if (!fileInput.files.length) {
-                alert('Please select an audio file.');
-                return;
+            if (activeTab === 'upload') {
+                const fileInput = document.getElementById('audioFile');
+                if (!fileInput.files.length) {
+                    alert('Please select an audio file or switch to recording tab.');
+                    return;
+                }
+                file = fileInput.files[0];
+            } else {
+                if (!recordedBlob) {
+                    alert('Please record audio first.');
+                    return;
+                }
+                file = new File([recordedBlob], 'recorded-audio.webm', { type: recordedBlob.type });
             }
             
-            const file = fileInput.files[0];
             const formData = new FormData();
             formData.append('file', file);
             
@@ -167,7 +343,8 @@
                         fileName: file.name,
                         fileType: file.type,
                         fileSize: file.size,
-                        date: new Date().toISOString()
+                        date: new Date().toISOString(),
+                        sourceType: activeTab === 'upload' ? 'Uploaded File' : 'Recorded Audio'
                     };
                 }
             })
@@ -185,7 +362,10 @@
             }
             
             const nameInput = document.getElementById('transcriptionName');
-            currentTranscription.name = nameInput.value || `Transcription of ${currentTranscription.fileName}`;
+            currentTranscription.name = nameInput.value || 
+                (currentTranscription.sourceType === 'Uploaded File' 
+                    ? `Transcription of ${currentTranscription.fileName}` 
+                    : `Recorded Transcription ${new Date().toLocaleString()}`);
             
             transcriptions.push(currentTranscription);
             localStorage.setItem('transcriptions', JSON.stringify(transcriptions));
@@ -207,8 +387,11 @@
             }
         }
         
-        // Initialize history display
-        displayHistory();
+        // Initialize when page loads
+        window.onload = function() {
+            displayHistory();
+            initRecording();
+        };
     </script>
 </body>
 </html>
